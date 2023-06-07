@@ -1,49 +1,46 @@
 // @version=5
-strategy("Martingale Fourtune", overlay = true, initial_capital = 1500, default_qty_type = strategy.percent_of_equity, pyramiding = 4)
+strategy("Martingale Fourtune", overlay = true, initial_capital = 100000, default_qty_type = strategy.percent_of_equity, pyramiding = 4)
 import TradingView/Strategy/3
 
-ma = ta.ema(close, input(200, "ma length"))
-plot(ma, "ema", color.rgb(255, 235, 59, 80), 1, plot.style_area)
-mafilter = input(true, "use ema?")
-allowshort = input(true, "allow short?")
+allow_short = input(false, "Allow Short?(UNAVAILABLE NOW)")
+
 // Test Start
-startYear = input(2005, "Test Start Year")
+startYear = input(2000, "Test Start Year")
 startMonth = input(1, "Test Start Month")
 startDay = input(1, "Test Start Day")
-startTest = timestamp(startYear,startMonth,startDay,0,0)
+startTest = timestamp(startYear, startMonth, startDay, 0, 0)
 
 //Test End
-endYear = input(2050, "Test End Year")
+endYear = input(9999, "Test End Year")
 endMonth = input(12, "Test End Month")
-endDay = input(30, "Test End Day")
-endTest = timestamp(endYear,endMonth,endDay,23,59)
+endDay = input(31, "Test End Day")
+endTest = timestamp(endYear, endMonth, endDay, 23, 59)
 
-timeRange = time > startTest and time < endTest ? true : false
+in_time_range = time >= startTest and time <= endTest ? true : false
 
 // 单份花的钱
-money = input(150)
+opening_capital_percent = input(10, "Opening Capital Percent")
+one_unit_money = strategy.initial_capital * opening_capital_percent / 100
 // 最大抗单天数
-maxDuration = input(30) * 24 * 60 * 60 * 1000
+max_duration = input(30, "Max Hoding Days") * 24 * 60 * 60 * 1000
 // 止盈百分比
-profit = input(10) / 100
-losses = input(10) / 100
+profit = input(10, "Take Profit Percentage") / 100
+losses = input(10, "Stop Loss Percentage") / 100
 
-// --- 
-// 通过RSI确定买点
-// ---
-// RSI信号长度
-length = input( 14 )
-overSold = input( 30 )
-overBought = input( 70 )
+// RSI Information
+rsi_length = input( 14, "RSI Length" )
+rsi_oversold = input( 30, "RSI Over Sold Line" )
+rsi_overbought = input( 70, "RSI Over Bought Line" )
 price = close
-rsi = ta.rsi(price, length)
-//yesterdayRsi = request.security(syminfo.tickerid, timeframe.period, vrsi[1])
-// canLong = ta.crossover(yesterdayRsi, overSold) and vrsi <= overSold
-// canShort = ta.crossunder(yesterdayRsi, overBought) and vrsi >= overBought
+rsi = ta.rsi(price, rsi_length)
+
+// The final long and short signal
 canLong = true
 canShort = true
 
-// 通过AI确定买点
+// ====
+// Lorentzian
+// ====
 
 import jdehorty/MLExtensions/2 as ml
 import jdehorty/KernelFunctions/2 as kernels
@@ -397,15 +394,15 @@ isBearish = useKernelFilter ? (useKernelSmoothing ? isBearishSmooth : isBearishR
 // ===========================
 
 // Entry Conditions: Booleans for ML Model Position Entries
-startLongTrade = isNewBuySignal and isBullish and isEmaUptrend and isSmaUptrend
+lozentzianBuy = isNewBuySignal and isBullish and isEmaUptrend and isSmaUptrend
 startShortTrade = isNewSellSignal and isBearish and isEmaDowntrend and isSmaDowntrend
 
 // Dynamic Exit Conditions: Booleans for ML Model Position Exits based on Fractal Filters and Kernel Regression Filters
-lastSignalWasBullish = ta.barssince(startLongTrade) < ta.barssince(startShortTrade)
-lastSignalWasBearish = ta.barssince(startShortTrade) < ta.barssince(startLongTrade)
+lastSignalWasBullish = ta.barssince(lozentzianBuy) < ta.barssince(startShortTrade)
+lastSignalWasBearish = ta.barssince(startShortTrade) < ta.barssince(lozentzianBuy)
 barsSinceRedEntry = ta.barssince(startShortTrade)
 barsSinceRedExit = ta.barssince(alertBullish)
-barsSinceGreenEntry = ta.barssince(startLongTrade)
+barsSinceGreenEntry = ta.barssince(lozentzianBuy)
 barsSinceGreenExit = ta.barssince(alertBearish)
 isValidShortExit = barsSinceRedExit > barsSinceRedEntry
 isValidLongExit = barsSinceGreenExit > barsSinceGreenEntry
@@ -413,7 +410,7 @@ endLongTradeDynamic = (isBearishChange and isValidLongExit[1])
 endShortTradeDynamic = (isBullishChange and isValidShortExit[1])
 
 // Fixed Exit Conditions: Booleans for ML Model Position Exits based on a Bar-Count Filters
-endLongTradeStrict = ((isHeldFourBars and isLastSignalBuy) or (isHeldLessThanFourBars and isNewSellSignal and isLastSignalBuy)) and startLongTrade[4]
+endLongTradeStrict = ((isHeldFourBars and isLastSignalBuy) or (isHeldLessThanFourBars and isNewSellSignal and isLastSignalBuy)) and lozentzianBuy[4]
 endShortTradeStrict = ((isHeldFourBars and isLastSignalSell) or (isHeldLessThanFourBars and isNewBuySignal and isLastSignalSell)) and startShortTrade[4]
 isDynamicExitValid = not useEmaFilter and not useSmaFilter and not useKernelSmoothing
 endLongTrade = settings.useDynamicExits and isDynamicExitValid ? endLongTradeDynamic : endLongTradeStrict 
@@ -424,7 +421,7 @@ endShortTrade = settings.useDynamicExits and isDynamicExitValid ? endShortTradeD
 // =========================
 
 // Note: These will not repaint once the most recent bar has fully closed. By default, signals appear over the last closed bar; to override this behavior set offset=0.
-plotshape(startLongTrade ? low : na, 'Buy', shape.labelup, location.belowbar, color=ml.color_green(prediction), size=size.small, offset=0)
+plotshape(lozentzianBuy ? low : na, 'Buy', shape.labelup, location.belowbar, color=ml.color_green(prediction), size=size.small, offset=0)
 //plotshape(startShortTrade ? high : na, 'Sell', shape.labeldown, location.abovebar, ml.color_red(-prediction), size=size.small, offset=0)
 plotshape(endLongTrade and settings.showExits ? high : na, 'StopBuy', shape.xcross, location.absolute, color=#3AFF17, size=size.tiny, offset=0)
 //plotshape(endShortTrade and settings.showExits ? low : na, 'StopSell', shape.xcross, location.absolute, color=#FD1707, size=size.tiny, offset=0)
@@ -434,13 +431,13 @@ plotshape(endLongTrade and settings.showExits ? high : na, 'StopBuy', shape.xcro
 // ================ 
 
 // Separate Alerts for Entries and Exits
-// alertcondition(startLongTrade, title='Open Long ▲', message='LDC Open Long ▲ | {{ticker}}@{{close}} | ({{interval}})')
+// alertcondition(lozentzianBuy, title='Open Long ▲', message='LDC Open Long ▲ | {{ticker}}@{{close}} | ({{interval}})')
 // alertcondition(endLongTrade, title='Close Long ▲', message='LDC Close Long ▲ | {{ticker}}@{{close}} | ({{interval}})')
 // alertcondition(startShortTrade, title='Open Short ▼', message='LDC Open Short  | {{ticker}}@{{close}} | ({{interval}})')
 // alertcondition(endShortTrade, title='Close Short ▼', message='LDC Close Short ▼ | {{ticker}}@{{close}} | ({{interval}})')
 
 // Combined Alerts for Entries and Exits
-// alertcondition(startShortTrade or startLongTrade, title='Open Position ▲▼', message='LDC Open Position ▲▼ | {{ticker}}@{{close}} | ({{interval}})')
+// alertcondition(startShortTrade or lozentzianBuy, title='Open Position ▲▼', message='LDC Open Position ▲▼ | {{ticker}}@{{close}} | ({{interval}})')
 // alertcondition(endShortTrade or endLongTrade, title='Close Position ▲▼', message='LDC Close Position  ▲▼ | {{ticker}}@[{{close}}] | ({{interval}})')
 
 // Kernel Estimate Alerts
@@ -461,52 +458,56 @@ y_val = useAtrOffset ? prediction > 0 ? high + atrSpaced: low - atrSpaced : pred
 label.new(x_val, y_val, str.tostring(prediction), xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_label_up, c_label, size.normal, text.align_left)
 barcolor(showBarColors ? color.new(c_pred, 50) : na)
 
+// =========
 // UT BOT
-//@version=4
+// =========
 
 // Inputs
-a = input(3,     title = "Key Vaule. 'This changes the sensitivity'")
-c = input(5,    title = "ATR Period")
-h2 = input(false, title = "Signals from Heikin Ashi Candles")
+a = input(3,     title = "Key Vaule. 'This changes the sensitivity'", group = "UT BOT")
+c = input(5,    title = "ATR Period", group = "UT BOT")
+ut_heikin = input(false, title = "Signals from Heikin Ashi Candles", group = "UT BOT")
+showUTBuy = input(true, title = "draw UT BOT's buy signal", group = "UT BOT")
+showUTSell = input(true, title = "draw UT BOT's sell signal", group = "UT BOT")
 
 xATR  = ta.atr(c)
 nLoss = a * xATR
 
-src2 = h2 ? request.security(ticker.heikinashi(syminfo.tickerid), timeframe.period, close, lookahead = barmerge.lookahead_off) : close
+ut_src = ut_heikin ? request.security(ticker.heikinashi(syminfo.tickerid), timeframe.period, close, lookahead = barmerge.lookahead_off) : close
 
 xATRTrailingStop = 0.0
-xATRTrailingStop := (src2 > nz(xATRTrailingStop[1], 0) and src2[1] > nz(xATRTrailingStop[1], 0)) ? math.max(nz(xATRTrailingStop[1]), src2 - nLoss) :
-   ((src2 < nz(xATRTrailingStop[1], 0) and src2[1] < nz(xATRTrailingStop[1], 0)) ? math.min(nz(xATRTrailingStop[1]), src2 + nLoss) :
-   ((src2 > nz(xATRTrailingStop[1], 0)) ? src2 - nLoss : src2 + nLoss))
+xATRTrailingStop := (ut_src > nz(xATRTrailingStop[1], 0) and ut_src[1] > nz(xATRTrailingStop[1], 0)) ? math.max(nz(xATRTrailingStop[1]), ut_src - nLoss) :
+   ((ut_src < nz(xATRTrailingStop[1], 0) and ut_src[1] < nz(xATRTrailingStop[1], 0)) ? math.min(nz(xATRTrailingStop[1]), ut_src + nLoss) :
+   ((ut_src > nz(xATRTrailingStop[1], 0)) ? ut_src - nLoss : ut_src + nLoss))
  
 pos = 0   
-pos :=	((src2[1] < nz(xATRTrailingStop[1], 0) and src2 > nz(xATRTrailingStop[1], 0)) ? 1 :
-   ((src2[1] > nz(xATRTrailingStop[1], 0) and src2 < nz(xATRTrailingStop[1], 0)) ? -1 : nz(pos[1], 0))) 
+pos :=	((ut_src[1] < nz(xATRTrailingStop[1], 0) and ut_src > nz(xATRTrailingStop[1], 0)) ? 1 :
+   ((ut_src[1] > nz(xATRTrailingStop[1], 0) and ut_src < nz(xATRTrailingStop[1], 0)) ? -1 : nz(pos[1], 0))) 
    
 xcolor = pos == -1 ? color.rgb(28, 236, 0): pos == 1 ? color.rgb(254, 0, 0) : color.blue 
 
-utema   = ta.ema(src2,1)
+utema   = ta.ema(ut_src,1)
 above = ta.crossover(utema, xATRTrailingStop)
 below = ta.crossover(xATRTrailingStop, utema)
 
-utbuy  = src2 > xATRTrailingStop and above 
-utsell = src2 < xATRTrailingStop and below
+utbuy  = ut_src > xATRTrailingStop and above 
+utsell = ut_src < xATRTrailingStop and below
 
-barbuy  = src2 > xATRTrailingStop 
-barsell = src2 < xATRTrailingStop 
+plotshape(utbuy and showUTBuy,  title = "Buy",  text = 'Buy',  style = shape.labelup,   location = location.belowbar, color= color.rgb(249, 0, 0), textcolor = color.white,  size = size.tiny)
+plotshape(utsell and showUTSell, title = "Sell", text = 'Sell', style = shape.labeldown, location = location.abovebar, color= color.rgb(0, 255, 8),   textcolor = color.white, size = size.tiny)
 
-plotshape(utbuy,  title = "Buy",  text = 'Buy',  style = shape.labelup,   location = location.belowbar, color= color.rgb(249, 0, 0), textcolor = color.white,  size = size.tiny)
-//plotshape(utsell, title = "Sell", text = 'Sell', style = shape.labeldown, location = location.abovebar, color= color.rgb(0, 255, 8),   textcolor = color.white, size = size.tiny)
+//barbuy  = ut_src > xATRTrailingStop 
+//barsell = ut_src < xATRTrailingStop 
+//barcolor(barbuy  ? color.rgb(245, 63, 63) : na)
+//barcolor(barsell ? color.rgb(55, 255, 0)   : na)
 
-barcolor(barbuy  ? color.rgb(245, 63, 63) : na)
-barcolor(barsell ? color.rgb(55, 255, 0)   : na)
 
-
+// =======
 // supertrend
+// =======
 // This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
 // © Zeiierman
 
-//@version=5
+// @version=5
 // indicator("SuperBollingerTrend (Expo)","",true,max_labels_count = 500)
 
 //~~ Inputs {
@@ -538,7 +539,7 @@ type Alerts
 
 var zz  = ZigZag.new(array.new<int>(),array.new<float>(),array.new<float>())
 var sbt = SuperBollingerTrend.new(0.0,na)
-alerted = Alerts.new() 
+supertrend = Alerts.new() 
 //Variables
 int b      = bar_index
 float bbup = ta.sma(high,prd)+ta.stdev(high,prd)*mult
@@ -570,8 +571,8 @@ method SBT(SuperBollingerTrend s,cond,val,col,p,l)=>
         s.c := col
         if showZigZag
             zz.zigzag(col,p,l)
-        alerted.Long  := l?true:false
-        alerted.Short := l?false:true
+        supertrend.Long  := l?true:false
+        supertrend.Short := l?false:true
 //Run Methods
 sbt.SBT(ta.crossover(close,sbt.s),bbdn,color.lime,low,true)
 sbt.SBT(ta.crossunder(close,sbt.s),bbup,color.red,high,false)
@@ -592,8 +593,8 @@ if showTP and zz.y1.size()>0
     tp.set_xy1(x2,y)
     tp.set_xy2(b+10,y)
     ltp.set_xy(b+10,y)
-    alerted.LongTp  := pos2?high>=y and high[1]<y:false
-    alerted.ShortTp := pos2?false:low<=y and low[1]>y
+    supertrend.LongTp  := pos2?high>=y and high[1]<y:false
+    supertrend.ShortTp := pos2?false:low<=y and low[1]>y
 
 //Table
 var table tbl = na
@@ -604,105 +605,83 @@ if barstate.islast and showZigZag and showTable
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
 
 // //~~ Alerts {
-// alertcondition(alerted.Long,"Long Alert","Long Signal")
-// alertcondition(alerted.Short,"Short Alert","Short Signal")
-// alertcondition(alerted.LongTp,"Long TP Alert","Long TP")
-// alertcondition(alerted.ShortTp,"Short TP Alert","Short TP")
+// alertcondition(supertrend.Long,"Long Alert","Long Signal")
+// alertcondition(supertrend.Short,"Short Alert","Short Signal")
+// alertcondition(supertrend.LongTp,"Long TP Alert","Long TP")
+// alertcondition(supertrend.ShortTp,"Short TP Alert","Short TP")
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
 
 
 // ======
 // MACD
 // ======
-
-fastLength = input(12)
-slowlength = input(26)
-MACDLength = input(9)
+fastLength = input(12, "MACD fast length", group = "MACD")
+slowlength = input(26, "MACD slow length", group = "MACD")
+MACDLength = input(9, "MACD length", group = "MACD")
 MACD = ta.ema(close, fastLength) - ta.ema(close, slowlength)
 aMACD = ta.ema(MACD, MACDLength)
 delta = MACD - aMACD
 macdBuy = false
 macdSell = false
-showMACD = input(false)
-if (ta.crossover(delta, 0) and aMACD < 0 and MACD < 0 and showMACD)// and (rsi[0] < overSold or rsi[1] < overSold or rsi[2] < overSold or rsi[3] < overSold or rsi[4] < overSold))
+showMACD_buy = input(false, "MACD show buy signal", group = "MACD")
+showMACD_sell = input(false, "MACD show sell signal", group = "MACD")
+if ((ta.crossover(delta, 0) and MACD < 0) and (rsi[0] <= rsi_oversold or rsi[1] <= rsi_oversold or rsi[2] <= rsi_oversold or rsi[3] <= rsi_oversold or rsi[4] <= rsi_oversold))
 	macdBuy := true
-if (ta.crossunder(delta, 0))
+if (ta.crossunder(delta, 0) and MACD > 0)
 	macdSell := true
 
-plotshape(macdBuy and showMACD,  title = "MACD",  text = 'MACD',  style = shape.labelup,   location = location.belowbar, color= color.rgb(167, 181, 255, 11), textcolor = color.white,  size = size.tiny)
-//plotshape(macdSell, title = "MACD", text = 'MACD', style = shape.labeldown, location = location.abovebar, color= color.rgb(0, 255, 8),   textcolor = color.white, size = size.tiny)
+plotshape(macdBuy and showMACD_buy,  title = "MACD",  text = 'MACD',  style = shape.labelup,   location = location.belowbar, color= color.rgb(167, 181, 255, 11), textcolor = color.white,  size = size.tiny)
+//plotshape(macdSell and showMACD_sell, title = "MACD", text = 'MACD', style = shape.labeldown, location = location.abovebar, color= color.rgb(0, 255, 8),   textcolor = color.white, size = size.tiny)
 
 
 // ======
 // 结算
 // ======
-if ((macdBuy or macdBuy[1] or macdBuy[2] or macdBuy[3] or macdBuy[4]) or showMACD == false) and ((utbuy or utbuy[1]) and (startLongTrade or startLongTrade[1]) and (alerted.Long or alerted.Long[1]))
+macd_long_signal = macdBuy or macdBuy[1] or macdBuy[2] or macdBuy[3] or macdBuy[4]
+ut_long_signal = utbuy or utbuy[1] 
+lorentzian_long_signal = lozentzianBuy or lozentzianBuy[1]
+supertrend_long_signal = supertrend.Long or supertrend.Long[1]
+anything_bad_happens = utsell or startShortTrade or supertrend.Short
+if (lorentzian_long_signal and ut_long_signal and supertrend_long_signal)
     canLong := true
 else 
     canLong := false
 
 
+// ======
+// Martingale
+// ======
+//allow_martin = input(false, "Allow Martingale?")
+//martin_offset = input(10000, "The amount of additional money invested each time the position is replenished", group = "Martingale")
+//martin_multiplier = input(1, "Each time the position is replenished, the multiple of the additional money invested", group = "Martingale")
+//martin_times = input(3, "Martingale Times", group = "Martingale")
+//open_trades_num = strategy.opentrades
+//martin_money = one_unit_money * math.pow(base = martin_multiplier, exponent = (open_trades_num - 1)) + (open_trades_num - 1) * martin_offset
+//martin_qty = martin_money / price
 
-
-// 计算所有多头订单的加权平均成本价格
-totalPositionSize = 0.0
-totalCost = 0.0
-qty = money / close
-pr1 = nz(strategy.opentrades.entry_price(0))
-sr1 = 0
-deadline = 0
-
-if (pr1 != 0)
-	sr1 := 1
-	qty := money * 2 / close
-	deadline := strategy.opentrades.entry_time(0) + maxDuration
-
-
-pr2 = nz(strategy.opentrades.entry_price(1))
-sr2 = 0
-if (pr2 != 0)
-	sr2 := 2
-	qty := money * 3 / close
-	deadline := strategy.opentrades.entry_time(1) + maxDuration
-
-
-pr3 = nz(strategy.opentrades.entry_price(2))
-sr3 = 0
-if (pr3 != 0)
-	sr3 := 3
-	qty := money * 4 / close
-	deadline := strategy.opentrades.entry_time(2) + maxDuration
-
-pr4 = nz(strategy.opentrades.entry_price(3))
-sr4 = 0
-if (pr4 != 0)
-	sr4 := 4
-	qty := 0
-	deadline := strategy.opentrades.entry_time(3) + maxDuration
-
-// 计算加权平均成本价格
-averageCost = (pr1 * sr1 + pr2 * sr2 + pr3 * sr3 + pr4* sr4) / (sr1 + sr2 + sr3 + sr4)
-profitside = averageCost * (1 + profit)
-halfprofitside = averageCost * (1 + profit / 2)
-lossside = averageCost * (1 - losses)
+qty = one_unit_money / price
+deadline = strategy.opentrades.entry_time(trade_num = strategy.opentrades - 1) + max_duration
+avg_price = strategy.position_avg_price
+open_profit= strategy.openprofit
+profit_price = avg_price * (1 + profit)
+half_profit_price = avg_price * (1 + profit / 2)
+stop_loss_price = avg_price * (1 - losses)
 
 // 输出加权平均成本价格
-//plot(averageCost * (1+profit), color=color.green, style=plot.style_line, linewidth=2)
+//plot(avg_price * (1+profit), color=color.green, style=plot.style_line, linewidth=2)
 
-if (not na(rsi))		
-    if (averageCost > 0)
-        if (price < lossside and timeRange)
-		    //strategy.entry("long", strategy.long, qty, comment="Long")
-            strategy.close("long")
-//        if (high > halfprofitside and (deadline - time) < maxDuration / 3)
-//            strategy.exit("exit", "long")
-        if (price > profitside)
-            strategy.close("long")
-        if (deadline > 0 and time >= deadline)
-            strategy.close("long")
-    else if (timeRange and canLong)
-		strategy.entry("long", strategy.long, qty, comment="Long")
-        strategy.exit("exit", "long", profit = profitside, loss = lossside)
-    
-
+if (avg_price > 0)
+    //if (anything_bad_happens)
+    //    strategy.close("long")
+    if (stop_loss_price > 0 and low < stop_loss_price)
+        strategy.close("long")
+    if (profit_price > 0 and high > profit_price)
+        strategy.close("long")
+    if (deadline > 0 and time >= deadline)
+        strategy.close("long")
+else if (in_time_range and canLong)
+    strategy.entry("long", strategy.long, qty, comment="Long")
+    //if (martin_times == open_trades_num - 1 or !allow_martin)
+    strategy.exit("exit", "long", profit = profit_price, loss = stop_loss_price)
+    //strategy.exit("exit", "long", loss = stop_loss_price)
 
