@@ -641,8 +641,10 @@ macd_long_signal = macdBuy or macdBuy[1] or macdBuy[2] or macdBuy[3] or macdBuy[
 ut_long_signal = utbuy or utbuy[1] 
 lorentzian_long_signal = lozentzianBuy or lozentzianBuy[1]
 supertrend_long_signal = supertrend.Long or supertrend.Long[1]
+
+// supertrend and ut bot are duplicated, only use one of them.
 anything_bad_happens = utsell or startShortTrade or supertrend.Short
-if (lorentzian_long_signal and ut_long_signal and supertrend_long_signal)
+if (lorentzian_long_signal and ut_long_signal and close <= open)
     canLong := true
 else 
     canLong := false

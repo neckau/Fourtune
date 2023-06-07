@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>乘以随机数</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+
+<body>
+    <p>基础参数：</p>
+    <label for="winRate">胜率（0-100）%：</label>
+    <input id="winRate" type="text" value="50"><br>
+
+    <label for="times">交易次数（一年总交易日约250天）：</label>
+    <input id="times" type="text" value="250"><br>
+
+    <label for="initialCapital">初始资金（元）：</label>
+    <input id="initialCapital" type="text" value="100000"><br>
+
+    <label for="takeProfit">止盈百分比(1-100)%</label>
+    <input id="takeProfit" type="text" value="10"><br>
+    <label for="stopLoss">止损百分比(1-100)%</label>
+    <input id="stopLoss" type="text" value="7"><br>
+
+    <p>仓位控制（马丁格尔策略）：</p>
+    <label for="oneUnitCapitalPercent">单次投入总资金百分比（0-100）%：</label>
+    <br />
+    <input id="oneUnitCapitalPercent" type="text" value="10"><br>
+
+    <label for="martinMultiplier">如果交易失败，下次交易增加投入倍数（如果交易成功，下次投入恢复至初始百分比）：</label>
+    <br />
+    <input id="martinMultiplier" type="text" value="1.5"><br>
+
+    <label for="maxMartinTimes">连续失败的最大加码次数（达到最大次数后，如果继续失败，则保持当前投入仓位）：</label>
+    <br />
+    <input id="maxMartinTimes" type="text" value="4"><br>
+
+
+    <button onclick="bet()">开始模拟</button>
+    <p id="result"></p>
+
+    <!-- 引入 JavaScript 文件 -->
+    <!--<script src="script.js"></script>-->
+    <script>
+        function bet() {
+            // 获取输入框中的数字
+            var winRate = Number(document.getElementById("winRate").value / 100);
+            var times = Number(document.getElementById("times").value);
+            var initialCapital = Number(document.getElementById("initialCapital").value);
+            var oneUnitCapitalPercent = Number(document.getElementById("oneUnitCapitalPercent").value / 100);
+            var martinMultiplier = Number(document.getElementById("martinMultiplier").value);
+            var maxMartinTimes = Number(document.getElementById("maxMartinTimes").value);
+            var takeProfit = Number(document.getElementById("takeProfit").value / 100);
+            var stopLoss = Number(document.getElementById("stopLoss").value / 100);
+
+            var minCapital = initialCapital;
+            var maxCapital = initialCapital;
+            var capital = initialCapital;
+            var currentBet = Math.round(oneUnitCapitalPercent * capital);
+            var curMartinTimes = 0;
+            var output = "";
+            for (var i = 0; i < times; ++i) {
+                if (hit(winRate)) {
+                    var offset = Math.round(currentBet * takeProfit);
+                    capital += offset;
+                    output += ("第" + (i + 1) + "次：投入：" + cur(currentBet) + "&#9;获利：" + cur(offset) + "&#9;剩余资金：" + cur(capital) + "<br/>");
+                    currentBet = Math.round(oneUnitCapitalPercent * capital);
+                    curMartinTimes = 0;
+                    maxCapital = Math.max(capital, maxCapital);
+                } else {
+                    var offset = Math.round(currentBet * stopLoss);
+                    capital -= offset;
+                    output += ("第" + (i + 1) + "次：投入：" + cur(currentBet) + "&#9;亏损：-" + cur(offset) + "&#9;剩余资金：" + cur(capital) + "<br/>");
+                    if (curMartinTimes < maxMartinTimes) {
+                        curMartinTimes++;
+                        currentBet = Math.round(currentBet * martinMultiplier);
+                    }
+                    minCapital = Math.min(capital, minCapital);
+                    currentBet = Math.min(currentBet, capital);
+                }
+                if (capital <= 0) {
+                    break;
+                }
+            }
+
+            var result = "";
+            result += ("最终账户余额：" + cur(capital) + "<br/>");
+            result += ("盈利倍数：" + (capital / initialCapital).toFixed(2) + "<br/>");
+            result += ("账户余额历史最大值：" + cur(maxCapital) + "<br/>");
+            result += ("账户余额历史最小值：" + cur(minCapital) + "<br/><br/>");
+            result += output;
+
+            // 显示结果
+            document.getElementById("result").innerHTML = result;
+        }
+
+        function hit(rate) {
+            return Math.random() <= rate;
+        }
+
+        function cur(num) {
+            return num.toLocaleString("en-US", { style: "currency", currency: "RMB" }) + " ¥";
+        }
+    </script>
+</body>
+
+</html>
